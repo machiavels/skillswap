@@ -36,10 +36,10 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: backend/package.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
         working-directory: backend
 
       - name: Lint
