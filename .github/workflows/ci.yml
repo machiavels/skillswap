@@ -44,12 +44,13 @@ jobs:
 
       - name: Run database migrations
         env:
-          TEST_DATABASE_URL: postgres://skillswap:skillswap@localhost:5432/skillswap_test
           DATABASE_URL: postgres://skillswap:skillswap@localhost:5432/skillswap_test
+          TEST_DATABASE_URL: postgres://skillswap:skillswap@localhost:5432/skillswap_test
         run: npm run migrate
 
       - name: Run tests
         env:
+          DATABASE_URL: postgres://skillswap:skillswap@localhost:5432/skillswap_test
           TEST_DATABASE_URL: postgres://skillswap:skillswap@localhost:5432/skillswap_test
           JWT_SECRET: ci-test-secret
           JWT_REFRESH_SECRET: ci-test-refresh-secret
@@ -58,6 +59,7 @@ jobs:
 
       - name: Run coverage
         env:
+          DATABASE_URL: postgres://skillswap:skillswap@localhost:5432/skillswap_test
           TEST_DATABASE_URL: postgres://skillswap:skillswap@localhost:5432/skillswap_test
           JWT_SECRET: ci-test-secret
           JWT_REFRESH_SECRET: ci-test-refresh-secret
