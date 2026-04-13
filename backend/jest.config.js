@@ -2,7 +2,9 @@
 
 module.exports = {
   testEnvironment: 'node',
-  testMatch: ['**/tests/**/*.test.js'],
+  testMatch: ['**/__tests__/**/*.test.js'],
+  globalSetup: './src/__tests__/setup.js',
+  globalTeardown: './src/__tests__/teardown.js',
   forceExit: true,
   detectOpenHandles: true,
   coverageDirectory: 'coverage',
