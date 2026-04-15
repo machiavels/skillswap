@@ -6,10 +6,10 @@ process.env.NODE_ENV   = 'test';
 
 const request = require('supertest');
 const app     = require('../../app');
-const { setupDatabase, teardownDatabase, clearTables } = require('../helpers/db');
+const { setupDatabase, clearTables, pool } = require('../helpers/db');
 
 beforeAll(() => setupDatabase());
-afterAll(()  => teardownDatabase());
+afterAll(()  => pool.end());
 beforeEach(() => clearTables());
 
 async function registerAndLogin(overrides = {}) {
@@ -62,7 +62,6 @@ describe('GET /api/v1/profile/:userId', () => {
   it('200 — returns public profile of another user', async () => {
     const { access_token } = await registerAndLogin();
     const other = await registerAndLogin({ email: 'carol@test.com', pseudo: 'carol99' });
-    // Extract id from JWT payload
     const payload = JSON.parse(Buffer.from(other.access_token.split('.')[1], 'base64').toString());
     const res = await request(app)
       .get(`/api/v1/profile/${payload.id}`)

@@ -6,10 +6,10 @@ process.env.NODE_ENV   = 'test';
 
 const request = require('supertest');
 const app     = require('../../app');
-const { setupDatabase, teardownDatabase, clearTables, pool } = require('../helpers/db');
+const { setupDatabase, clearTables, pool } = require('../helpers/db');
 
 beforeAll(() => setupDatabase());
-afterAll(()  => teardownDatabase());
+afterAll(()  => pool.end());
 beforeEach(() => clearTables());
 
 async function registerAndLogin(email, pseudo) {
