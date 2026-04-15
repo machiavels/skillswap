@@ -24,7 +24,7 @@ const FAKE_ROW = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // First call: insert notification; second: select expo token (returns none)
+  // Default: insert succeeds, expo-token lookup returns nothing
   pool.query
     .mockResolvedValueOnce({ rows: [FAKE_ROW] })
     .mockResolvedValue({ rows: [] });
@@ -72,7 +72,10 @@ describe('notification.service', () => {
     });
 
     it('rethrows DB errors', async () => {
+      // Reset all queued mocks so the rejection is first, not second
+      pool.query.mockReset();
       pool.query.mockRejectedValueOnce(new Error('db down'));
+
       await expect(
         createNotification({ userId: FAKE_USER_ID, type: 'new_message' })
       ).rejects.toThrow('db down');
