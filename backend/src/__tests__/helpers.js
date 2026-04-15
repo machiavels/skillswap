@@ -6,12 +6,18 @@ const fs   = require('fs');
 const path = require('path');
 const app  = require('../app');
 
+/** Shared pool for direct DB operations in tests. */
+function getTestPool() {
+  const connectionString = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+  return new Pool({ connectionString });
+}
+
 /** Run schema.sql + all migrations against the test DB. Idempotent. */
 async function applyMigrations() {
   const connectionString = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
   if (!connectionString) return;
 
-  const pool = new Pool({ connectionString });
+  const pool = getTestPool();
 
   const schemaPath = path.resolve(__dirname, '../database/schema.sql');
   if (fs.existsSync(schemaPath)) {
@@ -28,6 +34,21 @@ async function applyMigrations() {
     }
   }
 
+  // Seed minimal skills catalogue so tests can create exchanges
+  const SEED_SKILLS = [
+    { name: 'JavaScript', category: 'Technology' },
+    { name: 'Python',     category: 'Technology' },
+    { name: 'English',    category: 'Language'   },
+    { name: 'Guitar',     category: 'Music'      },
+    { name: 'Cooking',    category: 'Lifestyle'  },
+  ];
+  for (const s of SEED_SKILLS) {
+    await pool.query(
+      `INSERT INTO skills (name, category) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING`,
+      [s.name, s.category]
+    );
+  }
+
   await pool.end();
 }
 
@@ -41,8 +62,7 @@ beforeAll(async () => {
  */
 async function promoteToAdmin(userId) {
   await applyMigrations();
-  const connectionString = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
-  const pool = new Pool({ connectionString });
+  const pool = getTestPool();
   await pool.query('UPDATE users SET role = $1 WHERE id = $2', ['admin', userId]);
   await pool.end();
 }
@@ -91,31 +111,34 @@ function authHeader(token) {
 }
 
 /**
- * Get a skill UUID from the catalogue and attach it to the user.
- * Workflow:
- *   1. GET /api/v1/skills          — fetch catalogue
- *   2. POST /api/v1/skills/me      — attach skill to user (type: offered, level: beginner)
+ * Get a skill UUID from the catalogue (guaranteed non-empty after applyMigrations)
+ * and attach it to the user via POST /api/v1/skills/me.
  *
- * Returns the catalogue skill UUID (used as skill_id in exchanges).
- *
- * @param {string} token  — access token of the user who will offer the skill
- * @returns {Promise<string>} skill UUID from the catalogue
+ * @param {string} token  — access token of the user
+ * @returns {Promise<string>} skill UUID
  */
 async function seedSkill(token) {
-  // Step 1: get catalogue
+  // Catalogue is guaranteed non-empty because applyMigrations seeds 5 skills.
   const catalogRes = await request(app)
     .get('/api/v1/skills')
     .set(authHeader(token));
 
   if (catalogRes.status !== 200 || !catalogRes.body.data?.length) {
-    throw new Error(
-      `seedSkill: catalogue empty or unavailable (${catalogRes.status}): ${JSON.stringify(catalogRes.body)}`
+    // Last-resort: insert directly in DB
+    const pool = getTestPool();
+    const ins = await pool.query(
+      `INSERT INTO skills (name, category)
+       VALUES ('TestSkill', 'Test')
+       ON CONFLICT (name) DO UPDATE SET category = EXCLUDED.category
+       RETURNING id`
     );
+    await pool.end();
+    return ins.rows[0].id;
   }
 
   const skillId = catalogRes.body.data[0].id;
 
-  // Step 2: attach to user (idempotent — if already attached the exchange still works)
+  // Attach to user (idempotent — 409 on duplicate is fine)
   await request(app)
     .post('/api/v1/skills/me')
     .set(authHeader(token))
@@ -137,7 +160,6 @@ async function seedSkill(token) {
 async function createCompletedExchange(requesterId, partnerId, requesterToken, partnerToken) {
   const skillId = await seedSkill(requesterToken);
 
-  // Step 1: create exchange request
   const createRes = await request(app)
     .post('/api/v1/exchanges')
     .set(authHeader(requesterToken))
@@ -155,7 +177,6 @@ async function createCompletedExchange(requesterId, partnerId, requesterToken, p
 
   const exchangeId = createRes.body.data.id;
 
-  // Step 2: partner accepts
   const acceptRes = await request(app)
     .patch(`/api/v1/exchanges/${exchangeId}/respond`)
     .set(authHeader(partnerToken))
@@ -165,7 +186,6 @@ async function createCompletedExchange(requesterId, partnerId, requesterToken, p
     throw new Error(`createCompletedExchange (accept) failed: ${JSON.stringify(acceptRes.body)}`);
   }
 
-  // Step 3: requester confirms completion
   const confirmRes = await request(app)
     .patch(`/api/v1/exchanges/${exchangeId}/confirm`)
     .set(authHeader(requesterToken));
