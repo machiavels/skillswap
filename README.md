@@ -1,5 +1,7 @@
 # SkillSwap — Prototype Projet Gestion de projets
 
+![Backend Tests](https://github.com/machiavels/skillswap/actions/workflows/ci.yml/badge.svg)
+
 SkillSwap est une application mobile permettant à des utilisateurs jeunes d'échanger des compétences entre pairs selon un système de crédits-temps. Chaque échange est valorisé par une unité de crédit : l'enseignant(e) en reçoit une, l'apprenant(e) en perd une.
 
 ## Architecture technique
@@ -15,7 +17,7 @@ SkillSwap est une application mobile permettant à des utilisateurs jeunes d'éc
 ## Mise en route
 
 ```bash
-git clone https://github.com/ostrolawzyy-beep/skillswap.git
+git clone https://github.com/machiavels/skillswap.git
 cd skillswap
 cp backend/.env.example backend/.env   # renseigner JWT_SECRET et DB_PASSWORD
 docker compose up -d
@@ -90,6 +92,49 @@ docker compose exec backend npm run seed
 | POST | /api/v1/exchanges/:id/reviews | Soumission d'une évaluation (uniquement après complétion) |
 | GET | /api/v1/users/:userId/reviews | Liste des évaluations reçues par un utilisateur |
 
+### Notifications
+
+| Méthode | Chemin | Description |
+|---|---|---|
+| GET | /api/v1/notifications | Liste des notifications de l'utilisateur connecté (pagination, unread count) |
+| PATCH | /api/v1/notifications/:id/read | Marquer une notification comme lue |
+| PATCH | /api/v1/notifications/read-all | Marquer toutes les notifications comme lues |
+| POST | /api/v1/notifications/push-token | Enregistrer ou mettre à jour le token Expo Push |
+
+Les notifications sont également émises en temps réel via Socket.io dans la salle personnelle `user:<id>`, sur l'événement `notification`.
+
+Types de notifications : `exchange_request`, `exchange_accepted`, `exchange_cancelled`, `exchange_completed`, `new_message`, `new_review`.
+
+### Signalements (utilisateurs)
+
+| Méthode | Chemin | Description |
+|---|---|---|
+| POST | /api/v1/reports | Signaler un utilisateur, un échange ou un message (limité à 5/jour) |
+
+### Administration
+
+> Toutes les routes `/admin` nécessitent un compte avec `role = 'admin'`.
+
+#### Analytics
+
+| Méthode | Chemin | Description |
+|---|---|---|
+| GET | /api/v1/admin/analytics/overview | Vue d'ensemble de la plateforme (utilisateurs, échanges, notes) |
+| GET | /api/v1/admin/analytics/exchange-volume | Volume journalier d'échanges par statut (filtres ?from, ?to) |
+| GET | /api/v1/admin/analytics/popular-skills | Top 20 des compétences les plus demandées |
+| GET | /api/v1/admin/analytics/user-retention | Inscriptions hebdomadaires |
+
+#### Modération
+
+| Méthode | Chemin | Description |
+|---|---|---|
+| GET | /api/v1/admin/reports | Lister les signalements (filtres ?status, ?target_type) |
+| PATCH | /api/v1/admin/reports/:id | Résoudre un signalement (reviewed ou dismissed) |
+| DELETE | /api/v1/admin/users/:userId | Suppression logique d'un utilisateur + révocation des tokens |
+| DELETE | /api/v1/admin/exchanges/:id | Suppression logique d'un échange |
+
+Documentation complète de l'API admin : [`docs/admin-api.md`](docs/admin-api.md)
+
 ## Événements Socket.io
 
 ```
@@ -104,6 +149,7 @@ Serveur vers client :
   joined_exchange { exchangeId }
   new_message     { id, content, created_at, sender: { id, pseudo } }
   partner_typing  { userId, pseudo }
+  notification    { id, type, payload, created_at }  — notification temps réel
   error           { message }
 ```
 
@@ -131,9 +177,29 @@ en_attente → accepté → [confirmation des deux parties] → complété
           └→ annulé (l'une ou l'autre partie)
 ```
 
-## Avancement par sprint
+### Suppression logique (soft-delete)
 
+Les utilisateurs, échanges et messages ne sont jamais supprimés physiquement. Un champ `deleted_at` est positionné. Un utilisateur supprimé voit ses tokens révoqués et ne peut plus se connecter (401). Toutes les listes filtrent automatiquement `WHERE deleted_at IS NULL`.
+
+## Tests
+
+```bash
+cd backend
+npm test          # Jest + Supertest, base de données de test isolée
+npm run coverage  # rapport de couverture
+```
+
+La CI GitHub Actions (`.github/workflows/ci.yml`) exécute les tests et la couverture à chaque push et pull request.
+
+## Avancement
+
+### MVP (Sprints 1–4)
 - [x] Sprint 1 — Authentification et profil
 - [x] Sprint 2 — Compétences, disponibilités et recherche
 - [x] Sprint 3 — Échanges, score de compatibilité et messagerie temps réel
 - [x] Sprint 4 — Crédits, évaluations et historique
+
+### Post-MVP
+- [x] Issue #6 — Système de notifications (in-app + Expo Push)
+- [x] Issue #7 — Analytics admin (volume, compétences populaires, rétention)
+- [x] Issue #8 — Outils de modération (signalements, soft-delete, révocation)
