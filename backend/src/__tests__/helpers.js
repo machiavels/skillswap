@@ -93,27 +93,49 @@ function authHeader(token) {
 }
 
 /**
+ * Seed a skill directly in the DB and return its UUID.
+ * Uses the skills table that already exists from schema/migrations.
+ * @param {string} token  — access token of a logged-in user (for the skills API)
+ * @returns {Promise<string>} skill UUID
+ */
+async function seedSkill(token) {
+  // Try to add a skill via the API first
+  const unique = Date.now() + Math.random().toString(36).slice(2);
+  const res = await request(app)
+    .post('/api/v1/skills')
+    .set(authHeader(token))
+    .send({ name: `Skill${unique}`, category: 'test', type: 'offer', level: 'beginner' });
+
+  if (res.status === 201) return res.body.data.skill_id || res.body.data.id;
+  if (res.status === 200) return res.body.data.skill_id || res.body.data.id;
+
+  // Fallback: read first available skill from the catalogue
+  const listRes = await request(app)
+    .get('/api/v1/skills/catalogue')
+    .set(authHeader(token));
+  if (listRes.status === 200 && listRes.body.data?.length > 0) {
+    return listRes.body.data[0].id;
+  }
+
+  throw new Error(`seedSkill failed: POST /api/v1/skills returned ${res.status}: ${JSON.stringify(res.body)}`);
+}
+
+/**
  * Helper: simulate a full completed exchange between two users.
- * - requesterUser creates the exchange request
- * - partnerUser accepts it
- * - requesterUser confirms it as completed
- *
- * Requires the exchanges routes to be mounted at /api/v1/exchanges.
+ * - requester creates the exchange request
+ * - partner accepts via PATCH /:id/respond { action: 'accept' }
+ * - requester confirms via PATCH /:id/confirm
  *
  * @param {string} requesterId
  * @param {string} partnerId
  * @param {string} requesterToken
  * @param {string} partnerToken
- * @returns {Promise<object>} the final exchange row from the confirm response
+ * @returns {Promise<object>} the final exchange row
  */
 async function createCompletedExchange(requesterId, partnerId, requesterToken, partnerToken) {
-  // Step 1: fetch a skill id to attach to the exchange
-  const skillsRes = await request(app)
-    .get('/api/v1/skills')
-    .set(authHeader(requesterToken));
-  const skillId = skillsRes.body.data?.[0]?.id || null;
+  const skillId = await seedSkill(requesterToken);
 
-  // Step 2: create exchange request
+  // Step 1: create exchange request
   const createRes = await request(app)
     .post('/api/v1/exchanges')
     .set(authHeader(requesterToken))
@@ -131,21 +153,20 @@ async function createCompletedExchange(requesterId, partnerId, requesterToken, p
 
   const exchangeId = createRes.body.data.id;
 
-  // Step 3: partner accepts
+  // Step 2: partner accepts
   const acceptRes = await request(app)
-    .patch(`/api/v1/exchanges/${exchangeId}/status`)
+    .patch(`/api/v1/exchanges/${exchangeId}/respond`)
     .set(authHeader(partnerToken))
-    .send({ status: 'accepted' });
+    .send({ action: 'accept' });
 
   if (acceptRes.status !== 200) {
     throw new Error(`createCompletedExchange (accept) failed: ${JSON.stringify(acceptRes.body)}`);
   }
 
-  // Step 4: requester confirms completion
+  // Step 3: requester confirms completion
   const confirmRes = await request(app)
-    .patch(`/api/v1/exchanges/${exchangeId}/status`)
-    .set(authHeader(requesterToken))
-    .send({ status: 'completed' });
+    .patch(`/api/v1/exchanges/${exchangeId}/confirm`)
+    .set(authHeader(requesterToken));
 
   if (confirmRes.status !== 200) {
     throw new Error(`createCompletedExchange (confirm) failed: ${JSON.stringify(confirmRes.body)}`);
