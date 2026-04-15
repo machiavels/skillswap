@@ -46,4 +46,14 @@ async function createTestUser(overrides = {}) {
   };
 }
 
-module.exports = { createTestUser };
+/**
+ * Returns a supertest-compatible header object for Bearer auth.
+ * Usage: .set(authHeader(accessToken))
+ * @param {string} token — JWT access token
+ * @returns {{ Authorization: string }}
+ */
+function authHeader(token) {
+  return { Authorization: `Bearer ${token}` };
+}
+
+module.exports = { createTestUser, authHeader };
