@@ -27,6 +27,7 @@ describe('Auth', () => {
         birth_date:   new Date(Date.now() - 14 * 365 * 24 * 3600 * 1000).toISOString().slice(0, 10),
         cgu_accepted: true,
       });
+      // Controller guards age before Joi → 400
       expect(res.status).toBe(400);
     });
 
@@ -39,7 +40,8 @@ describe('Auth', () => {
         birth_date:   '2000-01-01',
         cgu_accepted: false,
       });
-      expect(res.status).toBe(422);
+      // Controller guards CGU before Joi → 400 (not 422)
+      expect(res.status).toBe(400);
     });
 
     it('rejects duplicate email', async () => {
@@ -56,6 +58,7 @@ describe('Auth', () => {
 
     it('rejects missing required fields', async () => {
       const res = await request(app).post('/api/v1/auth/register').send({ email: 'incomplete@example.com' });
+      // Missing fields caught by Joi middleware → 422
       expect(res.status).toBe(422);
     });
   });
