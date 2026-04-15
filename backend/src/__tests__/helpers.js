@@ -31,24 +31,16 @@ async function applyMigrations() {
   await pool.end();
 }
 
-/**
- * Run schema + migrations once per test-worker process before any suite.
- * Ensures migration-added columns (e.g. `role`) exist in this worker's
- * DB connection — globalSetup runs in a different Node context.
- */
 beforeAll(async () => {
   await applyMigrations();
 });
 
 /**
  * Promote a user to admin role directly in the DB.
- * Runs migrations first so the `role` column is guaranteed to exist,
- * regardless of the order in which beforeAll hooks are called.
- *
- * @param {string} userId — UUID of the user to promote
+ * @param {string} userId
  */
 async function promoteToAdmin(userId) {
-  await applyMigrations(); // idempotent — safe to call multiple times
+  await applyMigrations();
   const connectionString = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
   const pool = new Pool({ connectionString });
   await pool.query('UPDATE users SET role = $1 WHERE id = $2', ['admin', userId]);
@@ -57,7 +49,7 @@ async function promoteToAdmin(userId) {
 
 /**
  * Register a fresh user and return tokens + user object.
- * @param {object} overrides — override any default field
+ * @param {object} overrides
  */
 async function createTestUser(overrides = {}) {
   const unique  = Date.now() + Math.random().toString(36).slice(2);
@@ -82,13 +74,84 @@ async function createTestUser(overrides = {}) {
 }
 
 /**
- * Returns a supertest-compatible header object for Bearer auth.
- * Usage: .set(authHeader(accessToken))
- * @param {string} token — JWT access token
+ * Alias used by badge (and other) tests.
+ * Returns { user, token } where token is the access token.
+ * @param {object} overrides
+ */
+async function registerAndLogin(overrides = {}) {
+  const { user, accessToken } = await createTestUser(overrides);
+  return { user, token: accessToken };
+}
+
+/**
+ * Returns a supertest-compatible Authorization header.
+ * @param {string} token
  * @returns {{ Authorization: string }}
  */
 function authHeader(token) {
   return { Authorization: `Bearer ${token}` };
 }
 
-module.exports = { createTestUser, authHeader, promoteToAdmin };
+/**
+ * Helper: simulate a full completed exchange between two users.
+ * - requesterUser creates the exchange request
+ * - partnerUser accepts it
+ * - requesterUser confirms it as completed
+ *
+ * Requires the exchanges routes to be mounted at /api/v1/exchanges.
+ *
+ * @param {string} requesterId
+ * @param {string} partnerId
+ * @param {string} requesterToken
+ * @param {string} partnerToken
+ * @returns {Promise<object>} the final exchange row from the confirm response
+ */
+async function createCompletedExchange(requesterId, partnerId, requesterToken, partnerToken) {
+  // Step 1: fetch a skill id to attach to the exchange
+  const skillsRes = await request(app)
+    .get('/api/v1/skills')
+    .set(authHeader(requesterToken));
+  const skillId = skillsRes.body.data?.[0]?.id || null;
+
+  // Step 2: create exchange request
+  const createRes = await request(app)
+    .post('/api/v1/exchanges')
+    .set(authHeader(requesterToken))
+    .send({
+      partner_id:       partnerId,
+      skill_id:         skillId,
+      duration_minutes: 60,
+      desired_date:     new Date(Date.now() + 86400000).toISOString(),
+      message:          'Test exchange',
+    });
+
+  if (createRes.status !== 201) {
+    throw new Error(`createCompletedExchange (create) failed: ${JSON.stringify(createRes.body)}`);
+  }
+
+  const exchangeId = createRes.body.data.id;
+
+  // Step 3: partner accepts
+  const acceptRes = await request(app)
+    .patch(`/api/v1/exchanges/${exchangeId}/status`)
+    .set(authHeader(partnerToken))
+    .send({ status: 'accepted' });
+
+  if (acceptRes.status !== 200) {
+    throw new Error(`createCompletedExchange (accept) failed: ${JSON.stringify(acceptRes.body)}`);
+  }
+
+  // Step 4: requester confirms completion
+  const confirmRes = await request(app)
+    .patch(`/api/v1/exchanges/${exchangeId}/status`)
+    .set(authHeader(requesterToken))
+    .send({ status: 'completed' });
+
+  if (confirmRes.status !== 200) {
+    throw new Error(`createCompletedExchange (confirm) failed: ${JSON.stringify(confirmRes.body)}`);
+  }
+
+  return confirmRes.body.data;
+}
+
+module.exports = { createTestUser, registerAndLogin, authHeader, promoteToAdmin, createCompletedExchange };
