@@ -5,18 +5,34 @@ const path = require('path');
 const app  = require('../app');
 
 /**
- * Run the schema migration once before each __tests__ suite.
- * The globalSetup already does this, but it runs in a separate worker context.
- * This ensures the tables exist in the DB connection used by the test worker.
+ * Run the schema + all migrations once before each test suite.
+ * globalSetup runs in a separate worker context; this ensures the tables
+ * (including migration-added columns like `role`) exist in the connection
+ * used by the actual test worker.
  */
 beforeAll(async () => {
   const connectionString = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
-  if (!connectionString) return; // let the test fail with a clear DB error
-  const schemaPath = path.resolve(__dirname, '../database/schema.sql');
-  if (!fs.existsSync(schemaPath)) return;
+  if (!connectionString) return;
+
   const pool = new Pool({ connectionString });
-  const schema = fs.readFileSync(schemaPath, 'utf8');
-  await pool.query(schema);
+
+  // Base schema
+  const schemaPath = path.resolve(__dirname, '../database/schema.sql');
+  if (fs.existsSync(schemaPath)) {
+    await pool.query(fs.readFileSync(schemaPath, 'utf8'));
+  }
+
+  // Incremental migrations (001_, 002_, … in order)
+  const migrationsDir = path.resolve(__dirname, '../database/migrations');
+  if (fs.existsSync(migrationsDir)) {
+    const files = fs.readdirSync(migrationsDir)
+      .filter(f => f.endsWith('.sql'))
+      .sort();
+    for (const file of files) {
+      await pool.query(fs.readFileSync(path.join(migrationsDir, file), 'utf8'));
+    }
+  }
+
   await pool.end();
 });
 
