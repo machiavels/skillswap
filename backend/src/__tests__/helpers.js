@@ -74,8 +74,7 @@ async function createTestUser(overrides = {}) {
 }
 
 /**
- * Alias used by badge (and other) tests.
- * Returns { user, token } where token is the access token.
+ * Alias: returns { user, token } where token is the access token.
  * @param {object} overrides
  */
 async function registerAndLogin(overrides = {}) {
@@ -86,45 +85,48 @@ async function registerAndLogin(overrides = {}) {
 /**
  * Returns a supertest-compatible Authorization header.
  * @param {string} token
- * @returns {{ Authorization: string }}
  */
 function authHeader(token) {
   return { Authorization: `Bearer ${token}` };
 }
 
 /**
- * Seed a skill directly in the DB and return its UUID.
- * Uses the skills table that already exists from schema/migrations.
- * @param {string} token  — access token of a logged-in user (for the skills API)
- * @returns {Promise<string>} skill UUID
+ * Get a skill UUID from the catalogue and attach it to the user.
+ * Workflow:
+ *   1. GET /api/v1/skills          — fetch catalogue
+ *   2. POST /api/v1/skills/me      — attach skill to user (type: offered, level: beginner)
+ *
+ * Returns the catalogue skill UUID (used as skill_id in exchanges).
+ *
+ * @param {string} token  — access token of the user who will offer the skill
+ * @returns {Promise<string>} skill UUID from the catalogue
  */
 async function seedSkill(token) {
-  // Try to add a skill via the API first
-  const unique = Date.now() + Math.random().toString(36).slice(2);
-  const res = await request(app)
-    .post('/api/v1/skills')
-    .set(authHeader(token))
-    .send({ name: `Skill${unique}`, category: 'test', type: 'offer', level: 'beginner' });
-
-  if (res.status === 201) return res.body.data.skill_id || res.body.data.id;
-  if (res.status === 200) return res.body.data.skill_id || res.body.data.id;
-
-  // Fallback: read first available skill from the catalogue
-  const listRes = await request(app)
-    .get('/api/v1/skills/catalogue')
+  // Step 1: get catalogue
+  const catalogRes = await request(app)
+    .get('/api/v1/skills')
     .set(authHeader(token));
-  if (listRes.status === 200 && listRes.body.data?.length > 0) {
-    return listRes.body.data[0].id;
+
+  if (catalogRes.status !== 200 || !catalogRes.body.data?.length) {
+    throw new Error(
+      `seedSkill: catalogue empty or unavailable (${catalogRes.status}): ${JSON.stringify(catalogRes.body)}`
+    );
   }
 
-  throw new Error(`seedSkill failed: POST /api/v1/skills returned ${res.status}: ${JSON.stringify(res.body)}`);
+  const skillId = catalogRes.body.data[0].id;
+
+  // Step 2: attach to user (idempotent — if already attached the exchange still works)
+  await request(app)
+    .post('/api/v1/skills/me')
+    .set(authHeader(token))
+    .send({ skill_id: skillId, type: 'offered', level: 'beginner' });
+
+  return skillId;
 }
 
 /**
- * Helper: simulate a full completed exchange between two users.
- * - requester creates the exchange request
- * - partner accepts via PATCH /:id/respond { action: 'accept' }
- * - requester confirms via PATCH /:id/confirm
+ * Simulate a full completed exchange between two users:
+ *   requester creates → partner accepts (PATCH /respond) → requester confirms (PATCH /confirm)
  *
  * @param {string} requesterId
  * @param {string} partnerId
