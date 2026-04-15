@@ -149,7 +149,10 @@ async function seedSkill(token) {
 
 /**
  * Simulate a full completed exchange between two users:
- *   requester creates → partner accepts (PATCH /respond) → requester confirms (PATCH /confirm)
+ *   requester creates → partner accepts (PATCH /respond)
+ *   → requester confirms (PATCH /confirm) → partner confirms (PATCH /confirm)
+ *
+ * Both confirmations are required for status to reach 'completed'.
  *
  * @param {string} requesterId
  * @param {string} partnerId
@@ -186,15 +189,25 @@ async function createCompletedExchange(requesterId, partnerId, requesterToken, p
     throw new Error(`createCompletedExchange (accept) failed: ${JSON.stringify(acceptRes.body)}`);
   }
 
-  const confirmRes = await request(app)
+  // Requester confirms first
+  const confirmRequesterRes = await request(app)
     .patch(`/api/v1/exchanges/${exchangeId}/confirm`)
     .set(authHeader(requesterToken));
 
-  if (confirmRes.status !== 200) {
-    throw new Error(`createCompletedExchange (confirm) failed: ${JSON.stringify(confirmRes.body)}`);
+  if (confirmRequesterRes.status !== 200) {
+    throw new Error(`createCompletedExchange (confirm requester) failed: ${JSON.stringify(confirmRequesterRes.body)}`);
   }
 
-  return confirmRes.body.data;
+  // Partner confirms second — this triggers status = 'completed' and badge award
+  const confirmPartnerRes = await request(app)
+    .patch(`/api/v1/exchanges/${exchangeId}/confirm`)
+    .set(authHeader(partnerToken));
+
+  if (confirmPartnerRes.status !== 200) {
+    throw new Error(`createCompletedExchange (confirm partner) failed: ${JSON.stringify(confirmPartnerRes.body)}`);
+  }
+
+  return confirmPartnerRes.body.data;
 }
 
 module.exports = { createTestUser, registerAndLogin, authHeader, promoteToAdmin, createCompletedExchange };
