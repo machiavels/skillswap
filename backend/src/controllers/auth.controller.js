@@ -19,14 +19,14 @@ function calcAge(birthDate) {
 async function register(req, res) {
   const { email, password, pseudo, birth_date, cgu_accepted } = req.body;
 
-  // Age check
+  // Age check — controller-level business rule guard (400, not 422)
   if (calcAge(birth_date) < MIN_AGE_YEARS) {
-    return res.status(422).json({ error: `You must be at least ${MIN_AGE_YEARS} years old to register.` });
+    return res.status(400).json({ error: `You must be at least ${MIN_AGE_YEARS} years old to register.` });
   }
 
-  // CGU must be accepted
+  // CGU must be accepted — controller-level business rule guard (400, not 422)
   if (!cgu_accepted) {
-    return res.status(422).json({ error: 'You must accept the terms and conditions.' });
+    return res.status(400).json({ error: 'You must accept the terms and conditions.' });
   }
 
   try {
