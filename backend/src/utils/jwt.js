@@ -1,11 +1,13 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
-const ACCESS_EXPIRES = process.env.JWT_ACCESS_EXPIRES || '15m';
-const REFRESH_EXPIRES = process.env.JWT_REFRESH_EXPIRES || '7d';
-
 function generateAccessToken(payload) {
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: ACCESS_EXPIRES });
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET is not defined');
+  // Read at call time so tests (and runtime reconfigs) can override JWT_ACCESS_EXPIRES
+  const raw = process.env.JWT_ACCESS_EXPIRES || '15m';
+  const expiresIn = /^\d+$/.test(raw) ? Number(raw) : raw;
+  return jwt.sign(payload, secret, { expiresIn });
 }
 
 function generateRefreshToken() {

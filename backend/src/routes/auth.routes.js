@@ -6,15 +6,16 @@ const { register, login, refreshToken, logout } = require('../controllers/auth.c
 const router = Router();
 
 const registerSchema = Joi.object({
-  email: Joi.string().email().max(255).required(),
-  password: Joi.string().min(8).max(128).required(),
-  pseudo: Joi.string().alphanum().min(3).max(50).required(),
-  birth_date: Joi.date().iso().required(),
-  cgu_accepted: Joi.boolean().valid(true).required(),
+  email:        Joi.string().email().max(255).required(),
+  password:     Joi.string().min(8).max(128).required(),
+  pseudo:       Joi.string().alphanum().min(3).max(50).required(),
+  birth_date:   Joi.date().iso().required(),
+  // Allow false so the controller's explicit 400 guard fires before Joi rejects it
+  cgu_accepted: Joi.boolean().required(),
 });
 
 const loginSchema = Joi.object({
-  email: Joi.string().email().required(),
+  email:    Joi.string().email().required(),
   password: Joi.string().required(),
 });
 
