@@ -7,6 +7,11 @@ const { createReport }  = require('../controllers/reports.controller');
 
 const router = Router();
 
-router.post('/', authenticate, reportLimiter, createReport);
+// Skip rate limiter in test environment (all requests share the same IP)
+const limiterMiddleware = process.env.NODE_ENV === 'test'
+  ? (_req, _res, next) => next()
+  : reportLimiter;
+
+router.post('/', authenticate, limiterMiddleware, createReport);
 
 module.exports = router;
