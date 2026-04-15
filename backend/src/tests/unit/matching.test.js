@@ -26,12 +26,12 @@ describe('computeCompatibilityScore', () => {
     });
 
     it('gap of 2 => 15 pts', () => {
-      // 15 + 9 + 10 + 0 = 34
-      expect(computeCompatibilityScore({ ...base, offeredLevel: 'expert', wantedLevel: 'beginner' })).toBe(34);
+      // advanced(3) vs beginner(1) = gap 2 => 15 + 9 + 10 + 0 = 34
+      expect(computeCompatibilityScore({ ...base, offeredLevel: 'advanced', wantedLevel: 'beginner' })).toBe(34);
     });
 
     it('gap of 3 => 5 pts', () => {
-      // 5 + 0 + 10 + 0 = 15
+      // expert(4) vs beginner(1) = gap 3 => 5 + 0 + 10 + 0 = 15
       expect(computeCompatibilityScore({ ...base, offeredLevel: 'expert', wantedLevel: 'beginner', partnerSlots: [], requesterSlots: [] })).toBe(15);
     });
   });
