@@ -38,11 +38,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
         run: npm install
-
-      # Schema is applied by Jest globalSetup (setup.js) — no separate migrate step needed
 
       - name: Run tests
         env:
