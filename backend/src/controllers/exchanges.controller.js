@@ -5,6 +5,7 @@ const { success, error } = require('../utils/response');
 const { computeCompatibilityScore } = require('../services/matching.service');
 const { applyExchangeCredits, hasEnoughCredits } = require('../services/credits.service');
 const { createNotification } = require('../services/notification.service');
+const { checkAndAwardBadges } = require('../services/badge.service');
 const logger = require('../utils/logger');
 
 // ─── CREATE ───────────────────────────────────────────────────────────
@@ -207,7 +208,7 @@ async function respondExchange(req, res) {
 /**
  * PATCH /api/v1/exchanges/:exchangeId/confirm
  * Both participants must confirm to mark exchange as completed.
- * Emits exchange_completed notification when both sides confirm.
+ * Applies credits and checks badge eligibility for both participants.
  */
 async function confirmExchange(req, res) {
   const userId = req.user.id;
@@ -258,8 +259,14 @@ async function confirmExchange(req, res) {
       const notifPayload = { exchangeId };
       createNotification({ userId: ex.requester_id, type: 'exchange_completed', payload: notifPayload })
         .catch(err => logger.warn('notification failed', { error: err.message }));
-      createNotification({ userId: ex.partner_id,   type: 'exchange_completed', payload: notifPayload })
+      createNotification({ userId: ex.partner_id, type: 'exchange_completed', payload: notifPayload })
         .catch(err => logger.warn('notification failed', { error: err.message }));
+
+      // Check and award badges for both participants (non-blocking)
+      Promise.all([
+        checkAndAwardBadges(ex.requester_id),
+        checkAndAwardBadges(ex.partner_id),
+      ]).catch(err => logger.warn('badge check failed', { error: err.message }));
     }
 
     await client.query('COMMIT');
